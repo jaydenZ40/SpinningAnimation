@@ -13,10 +13,7 @@ cc.Class({
         rotateWheel: cc.Node,
         playButton: cc.Node,
         claimButton: cc.Node,
-
-        prizeHolder: cc.Node,  // keep position after changing hierarchy of node tree
-        rotateWheelHolder: cc.Node,
-
+        
         Hammer1: cc.Node,
         Hammer3: cc.Node,
         Life30: cc.Node,
@@ -27,6 +24,8 @@ cc.Class({
         Coin750: cc.Node,
         prize: cc.Node,
 
+        bgPrefab: cc.Prefab,
+
         rotSpeed: 5,
         acc: 0.001,
         turns: 4,
@@ -34,14 +33,23 @@ cc.Class({
 
 	onLoad() {
         this.isSpinning = false;
-        //this.rotSpeed = 5;
-        //this.acc = 0.001;
-        //this.turns = 4;
+        this.isSimulating = false;
     },
 
-    changeParent: function (node, newParent) {
-        if (node.parent == newParent) return;
-        node.parent = newParent;
+    simulate() {
+        this.isSimulating = true;
+
+        for (var i = 0; i < 1000; i++) {
+            this.spin();
+            while (true) {
+                this.repeatEachFrame();
+                if (this.rotSpeed < 0) break;
+            }
+            this.claim();
+        }
+
+        var passPrizeName = require('./Simulation.js');
+        passPrizeName.showResult();
     },
 
     spin() {
@@ -61,8 +69,8 @@ cc.Class({
         this.isSpinning = true;
 
         var prize_Int = Math.floor(Math.random() * 100);
-        console.log(prize_Int);
-        var totalRotation = Math.floor(Math.random() * 43) + 1;   //  1-43 degree to aviod ambiguous when stop at border.
+        //console.log(prize_Int);
+        var totalRotation = Math.floor(Math.random() * 39) + 5;   //  5-39 degree to aviod ambiguous when stop at border.
 
         if (prize_Int < 20) {
             this.prize = this.Life30;
@@ -107,34 +115,54 @@ cc.Class({
         this.playButton.active = false;      // disable play button
     },
 
+    claim() {
+        if (this.isSimulating) {
+            var passPrizeName = require('./Simulation.js');
+            passPrizeName.collectPrize(this.prize.name);
+        }
+
+        // restore all setting before spinning
+        this.prize.active = false;
+        this.claimButton.active = false;
+        this.playButton.active = true;
+
+        this.wheel = cc.instantiate(this.bgPrefab);
+        this.node.addChild(this.wheel);
+        this.wheel.parent = cc.find("Canvas/bg");
+        this.wheel.setPosition(cc.v2(0, 0));
+    },
+
+    repeatEachFrame: function () {
+        if (this.rotSpeed > 0) {    // keep rotating
+            this.rotSpeed -= this.acc;  // reduce speed by calculated acc in spin(), in order to stop at correct sector
+
+            this.rotateWheel.angle = (this.rotateWheel.angle + this.rotSpeed) % 360;   // wheel rotate
+        }
+        else {                      //  wheel stop, show prize
+            this.isSpinning = false;
+
+            let t = cc.tween;
+            t(this.wheel)
+                .to(0.5, {})
+                .call(() => {
+                    cc.find("Canvas/keepPos/keepPos1/keepPos2").angle = this.rotateWheel.angle;
+                    this.prize.parent = cc.find("Canvas/keepPos/keepPos1/keepPos2/keepPos3");
+                    this.wheel.destroy();
+                    this.claimButton.active = true;
+                    t(this.prize)   // move to center and get twice bigger.
+                        .parallel(
+                            t().to(2, { scale: 2 }),
+                            t().to(2, { position: cc.v2(0, 0) })
+                        )
+                        .start()
+                })
+                .start()
+        }
+    },
+
     update(dt) {
         if (this.isSpinning) {
-            if (this.rotSpeed > 0) {
-                this.rotSpeed -= this.acc;
-
-                this.rotateWheel.angle = (this.rotateWheel.angle + this.rotSpeed) % 360;   // wheel rotate
-            }
-            else {
-                //console.log("Claim Prize");
-                this.isSpinning = false;
-
-                let t = cc.tween;
-                t(this.wheel)
-                    .to(0.5, {})
-                    .call(() => {
-                        this.rotateWheelHolder.angle = this.rotateWheel.angle;
-                        this.changeParent(this.prize, this.prizeHolder);
-                        this.wheel.active = false;
-                        this.claimButton.active = true;
-                        t(this.prize)
-                            .parallel(
-                                t().to(2, { scale: 2 }),
-                                t().to(2, { position: cc.v2(0, 0) })
-                            )
-                            .start()
-                    })
-                    .start()
-            }
+            this.repeatEachFrame();
         }
     },
 });
